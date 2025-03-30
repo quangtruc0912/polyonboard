@@ -4,39 +4,40 @@ pragma solidity ^0.8.20;
 import "@openzeppelin/contracts/access/Ownable.sol";
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
-import "./NonCustodialDeposit.sol";
+import "./CheckoutPool.sol";
 import "./SmartWallet.sol";
 
-contract WalletFactory is Ownable {
+contract WalletFactory {
     using SafeERC20 for IERC20;
-
+    using ECDSA for bytes32;
     mapping(address => address) public userWallets;
+    mapping(address => uint256) public withdrawNonces;
     IERC20 public immutable token;
-    NonCustodialDeposit public depositContract;
+    address public checkoutPool;
+    bool public locked; // Immutability flag
+    address public immutable initialDeployer; // New: Tracks deployer
 
     event WalletCreated(address indexed user, address wallet);
-    event WithdrawnToOriginalAccount(address indexed user, uint256 amount);
+    event Withdrawn(address indexed user, uint256 amount);
+    event CheckoutPoolUpdated(address indexed newCheckoutPool);
+    event Locked();
 
-    constructor(address _token) Ownable(msg.sender) {
-        require(_token != address(0), "Invalid token address");
-        token = IERC20(_token);
+    constructor(address _initialDeployer) {
+        require(_initialDeployer != address(0), "Invalid checkout pool");
+        checkoutPool = _initialDeployer;
+        initialDeployer = _initialDeployer; // Set deployer
     }
 
     function createWallet(address user) external {
+        require(
+            msg.sender == address(checkoutPool),
+            "Only CheckoutPool can call"
+        );
         require(user != address(0), "Invalid user address");
         require(userWallets[user] == address(0), "Wallet already exists");
 
         SmartWallet wallet = new SmartWallet(user, address(this));
         userWallets[user] = address(wallet);
-
-        uint256 userBalance = depositContract.balances(user);
-        if (userBalance > 0) {
-            depositContract.withdrawToSmartWallet(
-                user,
-                address(wallet),
-                userBalance
-            );
-        }
 
         emit WalletCreated(user, address(wallet));
     }
@@ -45,35 +46,59 @@ contract WalletFactory is Ownable {
         return userWallets[user];
     }
 
-    function withdrawToOriginalAccount(uint256 amount) external {
-        address wallet = userWallets[msg.sender];
+    function withdrawToOriginalAccountGasless(
+        address user,
+        uint256 amount,
+        uint256 nonce,
+        bytes memory signature
+    ) external {
+        address wallet = userWallets[user];
         require(wallet != address(0), "No wallet found");
         require(token.balanceOf(wallet) >= amount, "Insufficient balance");
+        require(nonce == withdrawNonces[user], "Invalid nonce");
 
-        // Encode ERC20 transfer call: transfer(msg.sender, amount)
+        bytes32 messageHash = keccak256(
+            abi.encodePacked(
+                "\x19\x01",
+                keccak256(abi.encode(address(this), user, amount, nonce))
+            )
+        );
+        address signer = messageHash.recover(signature);
+        require(signer == user, "Invalid signature");
+
+        withdrawNonces[user]++;
         bytes memory data = abi.encodeWithSignature(
             "transfer(address,uint256)",
-            msg.sender,
+            user,
             amount
         );
-
-        // Call token contract, not msg.sender, with value = 0
         SmartWallet(payable(wallet)).executeTransaction(
             address(token),
             0,
             data
         );
-        emit WithdrawnToOriginalAccount(msg.sender, amount);
+
+        emit Withdrawn(user, amount);
     }
 
-    function updateDepositContract(
-        address _depositContract
-    ) external onlyOwner {
+    function updateCheckoutPool(address _checkoutPool) external {
+        require(!locked, "Contract is locked");
         require(
-            address(depositContract) == address(0),
-            "Deposit contract already set"
+            msg.sender == checkoutPool,
+            "Only current CheckoutPool can update"
         );
-        require(_depositContract != address(0), "Invalid address");
-        depositContract = NonCustodialDeposit(_depositContract);
+        require(_checkoutPool != address(0), "Invalid address");
+        checkoutPool = _checkoutPool;
+        emit CheckoutPoolUpdated(_checkoutPool);
+    }
+
+    function lock() external {
+        require(
+            msg.sender == initialDeployer || msg.sender == checkoutPool,
+            "Only deployer or CheckoutPool can lock"
+        );
+        require(!locked, "Already locked");
+        locked = true;
+        emit Locked();
     }
 }

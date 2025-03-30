@@ -11,29 +11,57 @@ async function main() {
     const mockUSDCAddress = await mockUSDC.getAddress();
     console.log("MockUSDC deployed to:", mockUSDCAddress);
 
-    // Deploy WalletFactory (without NonCustodialDeposit)
+    // Deploy Create2ForwarderFactory
+    const Create2ForwarderFactory = await ethers.getContractFactory("Create2ForwarderFactory");
+    const forwarderFactory = await Create2ForwarderFactory.deploy(deployer.address);
+    await forwarderFactory.waitForDeployment();
+    const forwarderFactoryAddress = await forwarderFactory.getAddress();
+    console.log("Create2ForwarderFactory deployed to:", forwarderFactoryAddress);
+
+    // Deploy WalletFactory
     const WalletFactory = await ethers.getContractFactory("WalletFactory");
-    const walletFactory = await WalletFactory.deploy(mockUSDCAddress);
+    const walletFactory = await WalletFactory.deploy(deployer.address);
     await walletFactory.waitForDeployment();
     const walletFactoryAddress = await walletFactory.getAddress();
     console.log("WalletFactory deployed to:", walletFactoryAddress);
 
-    // Deploy NonCustodialDeposit
-    const NonCustodialDeposit = await ethers.getContractFactory("NonCustodialDeposit");
-    const nonCustodialDeposit = await NonCustodialDeposit.deploy(mockUSDCAddress, walletFactoryAddress);
-    await nonCustodialDeposit.waitForDeployment();
-    const nonCustodialDepositAddress = await nonCustodialDeposit.getAddress();
-    console.log("NonCustodialDeposit deployed to:", nonCustodialDepositAddress);
+    // Deploy CheckoutPool with correct argument order
+    const CheckoutPool = await ethers.getContractFactory("CheckoutPool");
+    const checkoutPool = await CheckoutPool.deploy(
+        mockUSDCAddress,
+        forwarderFactoryAddress,
+        walletFactoryAddress
+    );
+    await checkoutPool.waitForDeployment();
+    const checkoutPoolAddress = await checkoutPool.getAddress();
+    console.log("CheckoutPool deployed to:", checkoutPoolAddress);
+    console.log("Token address in CheckoutPool:", await checkoutPool.token());
 
-    // Set deposit contract in WalletFactory
-    const walletFactoryContract = await ethers.getContractAt("WalletFactory", walletFactoryAddress);
-    const tx = await walletFactoryContract.updateDepositContract(nonCustodialDepositAddress);
+
+
+    const forwarderFactoryContract = await ethers.getContractAt("Create2ForwarderFactory", forwarderFactoryAddress);
+    let tx = await forwarderFactoryContract.updateCheckoutPool(checkoutPoolAddress);
     await tx.wait();
-    console.log("WalletFactory updated with NonCustodialDeposit");
+    console.log("Create2ForwarderFactory updated with CheckoutPool address");
+
+    const walletFactoryContract = await ethers.getContractAt("WalletFactory", walletFactoryAddress);
+    tx = await walletFactoryContract.updateCheckoutPool(checkoutPoolAddress);
+    await tx.wait();
+    console.log("WalletFactory updated with CheckoutPool address");
+
+    tx = await forwarderFactoryContract.lock();
+    await tx.wait();
+    console.log("Create2ForwarderFactory locked");
+
+    tx = await walletFactoryContract.lock();
+    await tx.wait();
+    console.log("WalletFactory locked");
+
 }
 
-// Run deployment
-main().catch((error) => {
-    console.error(error);
-    process.exitCode = 1;
-});
+main()
+    .then(() => process.exit(0))
+    .catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
