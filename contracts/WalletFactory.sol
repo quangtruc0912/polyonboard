@@ -60,7 +60,10 @@ contract WalletFactory is EIP712 {
      * @param _token The address of the ERC20 token used for withdrawals.
      * @param _initialDeployer The initial CheckoutPool address and deployer.
      */
-    constructor(address _token, address _initialDeployer) EIP712("WalletFactory", "1") {
+    constructor(
+        address _token,
+        address _initialDeployer
+    ) EIP712("WalletFactory", "1") {
         require(_initialDeployer != address(0), "Invalid checkout pool");
         checkoutPool = _initialDeployer;
         token = IERC20(_token);
@@ -73,7 +76,10 @@ contract WalletFactory is EIP712 {
      * @param user The address of the user for whom the wallet is created.
      */
     function createWallet(address user) external {
-        require(msg.sender == address(checkoutPool), "Only CheckoutPool can call");
+        require(
+            msg.sender == address(checkoutPool),
+            "Only CheckoutPool can call"
+        );
         require(user != address(0), "Invalid user address");
         require(userWallets[user] == address(0), "Wallet already exists");
 
@@ -90,7 +96,6 @@ contract WalletFactory is EIP712 {
      * @return The address of the user’s SmartWallet, or 0 if none exists.
      */
     function getWallet(address user) external view returns (address) {
-             
         return userWallets[user];
     }
 
@@ -112,16 +117,24 @@ contract WalletFactory is EIP712 {
         require(wallet != address(0), "No wallet found");
         require(nonce == withdrawNonces[user], "Invalid nonce");
 
-        bytes32 structHash = keccak256(abi.encode(WITHDRAW_TYPEHASH, user, amount, nonce));
+        bytes32 structHash = keccak256(
+            abi.encode(WITHDRAW_TYPEHASH, user, amount, nonce)
+        );
         bytes32 hash = _hashTypedDataV4(structHash);
         address signer = ECDSA.recover(hash, signature);
         require(signer == user, "Invalid signature");
-
         withdrawNonces[user]++;
         uint256 transferAmount = amount == 0 ? token.balanceOf(wallet) : amount;
-
-        bytes memory data = abi.encodeWithSignature("transfer(address,uint256)", user, transferAmount);
-        SmartWallet(payable(wallet)).executeTransaction(address(token), 0, data);
+        bytes memory data = abi.encodeWithSignature(
+            "transfer(address,uint256)",
+            user,
+            transferAmount
+        );
+        SmartWallet(payable(wallet)).executeTransaction(
+            address(token),
+            0,
+            data
+        );
 
         emit Withdrawn(user, transferAmount);
     }
@@ -133,7 +146,10 @@ contract WalletFactory is EIP712 {
      */
     function updateCheckoutPool(address _checkoutPool) external {
         require(!locked, "Contract is locked");
-        require(msg.sender == checkoutPool, "Only current CheckoutPool can update");
+        require(
+            msg.sender == checkoutPool,
+            "Only current CheckoutPool can update"
+        );
         require(_checkoutPool != address(0), "Invalid address");
         checkoutPool = _checkoutPool;
         emit CheckoutPoolUpdated(_checkoutPool);
@@ -144,9 +160,21 @@ contract WalletFactory is EIP712 {
      * @dev Callable only by the initial deployer or current CheckoutPool.
      */
     function lock() external {
-        require(msg.sender == initialDeployer || msg.sender == checkoutPool, "Only deployer or CheckoutPool can lock");
+        require(
+            msg.sender == initialDeployer || msg.sender == checkoutPool,
+            "Only deployer or CheckoutPool can lock"
+        );
         require(!locked, "Already locked");
         locked = true;
         emit Locked();
     }
+
+    /**
+     * @notice return Nonce if destinated address
+     * @dev The nonce of the _address.
+     * @param _address The new CheckoutPool address.
+     */
+    function getWithdrawNonce(address _address) external view returns (uint256) {
+        return withdrawNonces[_address];
+    }   
 }
