@@ -1,13 +1,13 @@
 # Simple onboarding like polymarket
 A simple onboarding process like Polymarket  Here’s a summary of key elements:
-Wallet Connection – Users can sign up quickly using MetaMask
-Forward deposit –  A smart contract automatically transfers received assets to the destination address.
-Smart Wallet –  Enables account abstraction, meaning wallets function like smart contracts with advanced logic.
-Gasless Transactions – Utilize EIP-712 signatures for gasless deposits or transactions, ensuring a seamless experience.
+- Wallet Connection – Users can sign up quickly using MetaMask
+- Forward deposit –  A smart contract automatically transfers received assets to the destination address.
+- Smart Wallet –  Enables account abstraction, meaning wallets function like smart contracts with advanced logic.
+- Gasless Transactions – Utilize EIP-712 signatures for gasless deposits or transactions, ensuring a seamless experience.
 
 # Workflow
-Login -> Forward deposit address created -> User Deposist to Forward address-> Verify transaction -> Relayer transfer from Forward address to CheckoutPool -> Smart Wallet created from factory-> Transfer from CheckoutPool to SmartWallet.
-User Sign request Withdraw -> relayer confirm > send transaction to Wallet Factory -> Transfer from Smart Wallet to user Wallet.
+- Login -> Forward deposit address created -> User Deposist to Forward address-> Verify transaction -> Relayer transfer from Forward address to CheckoutPool -> Smart Wallet created from factory-> Transfer from CheckoutPool to SmartWallet.
+- User Sign request Withdraw -> relayer confirm > send transaction to Wallet Factory -> Transfer from Smart Wallet to user Wallet.
 
 ## Setup
 
@@ -55,7 +55,7 @@ npx hardhat compile
   - `contracts/addresses.ts`: After deploy script observe the terminal and replace deployed contract at `addresses.ts`
   - `typechain-types/`: Copied from `src/typechain-types` after `compile`
 
-  - **relayer-server/**: Simple Nodejs server that acting like a relayer
+- **relayer-server/**: Simple Nodejs server that acting like a relayer
   - `src/typechain-types/`: Copied from `src/typechain-types` after `compile`
   - `index.ts`: define endpoints
   - `relayer.ts`: send tx
