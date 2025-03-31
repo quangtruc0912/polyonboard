@@ -1,14 +1,15 @@
 const { ethers, keccak256, AbiCoder } = require("hardhat");
 
 async function main() {
-    const [user] = await ethers.getSigners();
+    const [user, relayer] = await ethers.getSigners();
     const walletFactoryAddress = "0x9fE46736679d2D9a65F0992F2272dE9f3c7fa6e0";
     const mockUSDCAddress = "0x5FbDB2315678afecb367f032d93F642f64180aa3";
     const checkoutPoolAddress = "0xCf7Ed3AccA5a467e9e704C703E8D87F634fB0Fc9";
     const forwarderFactoryAddress = "0xe7f1725E7734CE288F8367e1Bb143E90bb3F0512";
-
-
-
+    // Get chain ID
+    const network = await ethers.provider.getNetwork();
+    const chainId = network.chainId;
+    console.log(`Chain ID: ${chainId}`);
 
     // Attach to contracts
     const checkoutPool = await ethers.getContractAt("CheckoutPool", checkoutPoolAddress);
@@ -17,16 +18,7 @@ async function main() {
     const forwarderFactory = await ethers.getContractAt("Create2ForwarderFactory", forwarderFactoryAddress);
 
     console.log(`Interacting as: ${user.address}`);
-    console.log(`Token in CheckoutPool: ${await checkoutPool.token()}`);
     console.log(`Expected token: ${mockUSDCAddress}`);
-
-    // Mint 1M USDC
-    const mintAmount = ethers.parseUnits("1000000", 6);
-    const initialBalance = await mockUSDCContract.balanceOf(user.address);
-    if (initialBalance < mintAmount) {
-        await mockUSDCContract.connect(user).mint(user.address, mintAmount);
-        console.log(`Minted ${ethers.formatUnits(mintAmount, 6)} mUSDC to ${user.address}`);
-    }
 
     // Check initial USDC balance
     let userUSDCBalance = await mockUSDCContract.balanceOf(user.address);
@@ -43,10 +35,10 @@ async function main() {
 
     if (codeAtAddress === "0x") {
         console.log("Forwarder not deployed at computed address. Deploying...");
-        console.log("Forwarder factory",forwarderFactory)
+        console.log("Forwarder factory", forwarderFactory)
         const tx = await forwarderFactory.deployForwarder(user.address, salt);
         await tx.wait();
-   
+
         console.log(`Forwarder deployed to: ${forwarderAddress}`);
     } else {
         console.log(`Forwarder already exists at: ${forwarderAddress}`);
@@ -70,7 +62,7 @@ async function main() {
 
     try {
         console.log('abc', forwarder.address)
-        const depositTx = await forwarder.connect(user).forwardDeposit(depositAmount);
+        const depositTx = await forwarder.connect(user).forwardDeposit(depositAmount,user.address); // USER = ADMIN
         delay(1000)
         const receipt = await depositTx.wait();
         console.log(`Forwarder deposited ${ethers.formatUnits(depositAmount, 6)} mUSDC to CheckoutPool`);
@@ -92,10 +84,10 @@ async function main() {
         return;
     }
 
-    let userWallet = await walletFactory.getWallet(user.address);
-    console.log(`Smart Wallet Address after first deposit: ${userWallet}`);
+    let userSmartWallet = await walletFactory.getWallet(user.address);
+    console.log(`Smart Wallet Address after first deposit: ${userSmartWallet}`);
     console.log(`User balance in CheckoutPool after: ${ethers.formatUnits(await checkoutPool.balances(user.address), 6)} mUSDC`);
-    console.log(`Wallet Balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf(userWallet), 6)} mUSDC`);
+    console.log(`Smart Wallet Balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf('0x75537828f2ce51be7289709686a69cbfdbb714f1'), 6)} mUSDC`);
 
     // Second Deposit
     console.log("\nSecond Deposit:");
@@ -110,7 +102,8 @@ async function main() {
     console.log(`Forwarder balance after transfer: ${ethers.formatUnits(await mockUSDCContract.balanceOf(forwarderAddress), 6)} mUSDC`);
 
     try {
-        const depositTx2 = await forwarder.connect(user).forwardDeposit(depositAmount, { gasLimit: 500000 });
+        
+        const depositTx2 = await forwarder.connect(user).forwardDeposit(depositAmount,user.address); // USER + ADMIN
         delay(1000)
         const receipt2 = await depositTx2.wait();
         console.log(`Forwarder deposited ${ethers.formatUnits(depositAmount, 6)} mUSDC to CheckoutPool`);
@@ -123,7 +116,60 @@ async function main() {
     }
 
     console.log(`User balance in CheckoutPool after: ${ethers.formatUnits(await checkoutPool.balances(user.address), 6)} mUSDC`);
-    console.log(`Wallet Balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf(userWallet), 6)} mUSDC`);
+    console.log(`Smart Wallet Balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf(userSmartWallet), 6)} mUSDC`);
+
+    const nonce = await walletFactory.withdrawNonces(user.address);
+
+    const domain = {
+        name: "WalletFactory",
+        version: "1",
+        chainId: chainId,
+        verifyingContract: walletFactoryAddress
+    };
+
+    const types = {
+        Withdraw: [
+            { name: "user", type: "address" },
+            { name: "amount", type: "uint256" },
+            { name: "nonce", type: "uint256" }
+        ]
+    };
+
+    const value = {
+        user: user.address,
+        amount: 0,
+        nonce: nonce.toString()
+    };
+
+    const signature = await user.signTypedData(domain, types, value);
+
+    console.log("\nGasless Withdrawal (All mUSDC):");
+    console.log(`User balance before: ${ethers.formatUnits(await mockUSDCContract.balanceOf(user.address), 6)} mUSDC`);
+    console.log(`Smart Wallet balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf(userSmartWallet), 6)} mUSDC`);
+    console.log(`Nonce: ${nonce}`);
+    console.log(`Signature: ${signature}`);
+    const abc =  await walletFactory.getWallet(user.address);
+    console.log(abc)
+    try {
+        const withdrawTx = await walletFactory.connect(relayer).withdrawToOriginalAccountGasless(
+            user.address,
+            0, // 0 for all tokens
+            nonce,
+            signature
+        );
+        const receipt = await withdrawTx.wait();
+        console.log(`Withdrawn all mUSDC gaslessly`);
+        console.log(`Gas used: ${receipt.gasUsed.toString()}`);
+    } catch (error: any) {
+        console.error("Withdrawal failed:", error.message);
+        if (error.reason) console.error("Revert reason:", error.reason);
+        if (error.data) console.error("Error data:", error.data);
+        return;
+    }
+
+    console.log(`User balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf(user.address), 6)} mUSDC`);
+    console.log(`Smart Wallet balance after: ${ethers.formatUnits(await mockUSDCContract.balanceOf(userSmartWallet), 6)} mUSDC`);
+
 }
 
 main()
@@ -133,6 +179,6 @@ main()
         process.exit(1);
     });
 
-function delay(time:any) {
+function delay(time: any) {
     return new Promise(resolve => setTimeout(resolve, time));
 }

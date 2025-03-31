@@ -20,7 +20,7 @@ async function main() {
 
     // Deploy WalletFactory
     const WalletFactory = await ethers.getContractFactory("WalletFactory");
-    const walletFactory = await WalletFactory.deploy(deployer.address);
+    const walletFactory = await WalletFactory.deploy(mockUSDCAddress,deployer.address);
     await walletFactory.waitForDeployment();
     const walletFactoryAddress = await walletFactory.getAddress();
     console.log("WalletFactory deployed to:", walletFactoryAddress);
@@ -58,6 +58,8 @@ async function main() {
     console.log("WalletFactory locked");
 
 }
+
+
 
 main()
     .then(() => process.exit(0))
